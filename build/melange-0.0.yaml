@@ -1,0 +1,88 @@
+package:
+  name: test-package-0.0
+  version: 0.0.1
+  epoch: 0
+  description: Simple Go binary that prints hello message
+
+environment:
+  contents:
+    packages:
+      - go-1.24
+      - busybox-bootstrap-1.36
+
+pipeline:
+  - name: Fix dynamic linker
+    runs: |
+      echo "=== DYNAMIC LINKER FIX ==="
+
+      # Create both /lib and /lib64 directories
+      mkdir -p /lib /lib64
+
+      # Create architecture-specific dynamic linker symlinks directly to /usr/lib
+      case "${{build.arch}}" in
+        "x86_64")
+          if [ -f /usr/lib/ld-linux-x86-64.so.2 ]; then
+            # Create symlinks in both /lib and /lib64 for maximum compatibility
+            ln -sf /usr/lib/ld-linux-x86-64.so.2 /lib/ld-linux-x86-64.so.2
+            ln -sf /usr/lib/ld-linux-x86-64.so.2 /lib64/ld-linux-x86-64.so.2
+            echo "✓ Created /lib/ld-linux-x86-64.so.2 -> /usr/lib/ld-linux-x86-64.so.2"
+            echo "✓ Created /lib64/ld-linux-x86-64.so.2 -> /usr/lib/ld-linux-x86-64.so.2"
+            # Test if the dynamic linker works
+            /lib64/ld-linux-x86-64.so.2 --version 2>/dev/null && echo "✓ Dynamic linker works" || echo "⚠ Dynamic linker test failed"
+          else
+            echo "✗ ERROR: No x86_64 dynamic linker found!"
+            ls -la /usr/lib/ld-linux-* 2>/dev/null || echo "No ld-linux binaries found"
+          fi
+          ;;
+        "aarch64")
+          if [ -f /usr/lib/ld-linux-aarch64.so.1 ]; then
+            # Create symlinks in both /lib and /lib64 for maximum compatibility
+            ln -sf /usr/lib/ld-linux-aarch64.so.1 /lib/ld-linux-aarch64.so.1
+            ln -sf /usr/lib/ld-linux-aarch64.so.1 /lib64/ld-linux-aarch64.so.1
+            echo "✓ Created /lib/ld-linux-aarch64.so.1 -> /usr/lib/ld-linux-aarch64.so.1"
+            echo "✓ Created /lib64/ld-linux-aarch64.so.1 -> /usr/lib/ld-linux-aarch64.so.1"
+            # Test if the dynamic linker works
+            /lib64/ld-linux-aarch64.so.1 --version 2>/dev/null && echo "✓ Dynamic linker works" || echo "⚠ Dynamic linker test failed"
+          else
+            echo "✗ ERROR: No aarch64 dynamic linker found!"
+            ls -la /usr/lib/ld-linux-* 2>/dev/null || echo "No ld-linux binaries found"
+          fi
+          ;;
+      esac
+
+      # Fix libc.so.6 linking issue
+      echo "Setting up libc symlinks for linking:"
+
+      # Create /lib directory if it doesn't exist and set up libc symlinks there
+      mkdir -p /lib
+
+      # Find and symlink libc.so.6 to /lib for linking
+      if [ -f /usr/lib/libc.so.6 ]; then
+        ln -sf /usr/lib/libc.so.6 /lib/libc.so.6
+        echo "✓ Created /lib/libc.so.6 -> /usr/lib/libc.so.6"
+      else
+        echo "⚠ libc.so.6 not found in /usr/lib"
+        ls -la /usr/lib/libc.so* 2>/dev/null || echo "No libc.so files found"
+      fi
+
+      echo "=== DYNAMIC LINKER FIX COMPLETE ==="
+
+  - uses: git-checkout
+    with:
+      repository: https://github.com/securebuildhq/test-package
+      tag: ${{package.version}}
+      expected-commit: 71f367430e217f66d3f877d6b0806256853eede7
+
+  - uses: go/build
+    with:
+      packages: .
+      go-package: go-1.24
+      output: test-package
+
+  - uses: strip
+
+update:
+  enabled: true
+  github:
+    identifier: securebuildhq/test-package
+    use-tag: true
